@@ -301,10 +301,10 @@ a.pagedtable-index-current:hover {\
 var PagedTable = function (pagedTable, source) {
   
   //Setup functions
-    var me = this;
+  var me = this;
   
   // immediately evaluate and extract/parse "source" w/ some error handling
-  var source = function(pagedTable, source) {
+  var extractSourceElement = function(pagedTable, source) {
     if (typeof(source) === "undefined") {
       var sourceElems = [].slice.call(pagedTable.children).filter(function(e) {
         return e.hasAttribute("data-pagedtable-source");
@@ -318,10 +318,10 @@ var PagedTable = function (pagedTable, source) {
     }
 
     return source;
-  }(pagedTable, source);
-
+  }
+  
   // get the paged table element, apply styling using shadowDOM,
-  var pagedTable = function(pagedTable, source) {
+  var makeShadow = function(pagedTable, source) {
     if (typeof(pagedTable) === "string") {
       pagedTable = document.getElementById(pagedTable);
     }
@@ -357,10 +357,10 @@ var PagedTable = function (pagedTable, source) {
     }
 
     return pagedTable;
-  }(pagedTable, source);
+  }
 
   // update "source" with more details/columns
-  source = function(source) {
+  var sourceDetails = function(source) {
     if (typeof(source.data) === "undefined") {
       source.data = source;
     }
@@ -390,10 +390,10 @@ var PagedTable = function (pagedTable, source) {
     }
 
     return source;
-  }(source);
+  };
 
   // get and create options about the paged table. 
-  var options = function(source) {
+  var getOptions = function(source) {
     var options = typeof(source.options) !== "undefined" &&
       source.options !== null ? source.options : {};
 
@@ -431,7 +431,8 @@ var PagedTable = function (pagedTable, source) {
       },
       html : colhtml
     };
-  }(source);
+  };
+  var options;
   
   // function that will convert a text entry (as is) into an html element or preserve it as text
   var makeCellContents = function(entry){
@@ -448,6 +449,14 @@ var PagedTable = function (pagedTable, source) {
 
   // function that when invoked determines what the 
   // average size of a text entry is to determine how wide to make text fields. 
+  
+  var sourceContents = function(pagedTable, source){
+    source = extractSourceElement(pagedTable, source);
+    pagedTable = makeShadow(pagedTable, source);
+    source = sourceDetails(source);
+    return [pagedTable,source];
+  };
+  
   var Measurer = function() {
 
     // set some default initial values that will get adjusted in runtime
@@ -732,10 +741,26 @@ var PagedTable = function (pagedTable, source) {
   };
   
   // Start evaluating the data
-  var data = source.data;
-  var page = new Page(data, options);
-  var measurer = new Measurer(data, options);
-  var columns = new Columns(data, source.columns, options);
+  var data;
+  var page;
+  var measurer;
+  var columns;
+  
+  me.createInternalVars = function(){
+    options =  getOptions(source);    
+    data = source.data;
+    page = new Page(data, options);
+    measurer = new Measurer(data, options);
+    columns = new Columns(data, source.columns, options);
+  }
+
+  me.internal_init = function(){
+    //extract data on init
+    val = sourceContents(pagedTable, source);
+    pagedTable = val[0]
+    source = val[1]
+    me.createInternalVars()
+  }
 
   var table = null;
   var tableDiv = null;
@@ -1431,6 +1456,9 @@ var PagedTable = function (pagedTable, source) {
   // called on initialization of the table, and should be used to first draw table
   me.init = function() {
     
+    //initialize contents
+    me.internal_init();
+    
     //create framework table
     me.drawTable()
     
@@ -1546,6 +1574,52 @@ var PagedTable = function (pagedTable, source) {
     }
 
     renderFooter();
+  }
+  
+  me.updateSource = function(newSource){
+    
+    source = newSource;
+        // remove old table
+    var p = pagedTable.querySelector("div");
+    p.remove(p.querySelectorAll(".table"))
+    
+    source = sourceDetails(source);
+    me.createInternalVars();
+    
+     me.drawTable()
+    
+    //initialization of stuff
+    renderMeasures();
+    measurer.calculate(measuresCell);
+    columns.calculateWidths(measurer.measures);
+    
+    //add table contents
+    me.addTableContents(0, false);
+    
+    renderFooter();
+
+    me.toggleColumnNavigation("right");
+    
+    if(columns.visCols.length === columns.total){
+      me.toggleColumnNavigation("left");
+    }
+    
+    graduate_new_columns(columns.visCols, false);
+
+
+    // retry seizing columns later if the host has not provided space
+    function retryFit() {
+      if (tableDiv.clientWidth <= 0) {
+        setTimeout(retryFit, 100);
+      } else {
+        triggerOnChange();
+      }
+    }
+    if (tableDiv.clientWidth <= 0) {
+      retryFit();
+    }
+
+    return me;
   }
 
   var parsePadding = function(value) {
